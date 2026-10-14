@@ -100,10 +100,20 @@ extension NemiClient {
                 json: Create(workspaceId: workspaceId, folderId: folderId, name: name, type: type, size: size)
             )
 
-            // The upload URL is presigned: it must never see the bearer token.
+            if ticket.maxSize > 0, size > ticket.maxSize {
+                throw NemiAPIError(status: 413, code: .tooLarge, message: "This file is larger than the \(ticket.maxSize) bytes the upload allows.")
+            }
+
+            // The upload URL is presigned: it gets exactly the headers the server
+            // listed and never the bearer token.
             var put = URLRequest(url: ticket.uploadUrl)
             put.httpMethod = ticket.method.isEmpty ? "PUT" : ticket.method.uppercased()
-            if let type { put.setValue(type, forHTTPHeaderField: "Content-Type") }
+            for (name, value) in ticket.headers where name.lowercased() != "authorization" {
+                put.setValue(value, forHTTPHeaderField: name)
+            }
+            if let type, put.value(forHTTPHeaderField: "Content-Type") == nil {
+                put.setValue(type, forHTTPHeaderField: "Content-Type")
+            }
             let (body, response): (Data, HTTPURLResponse)
             switch source {
             case .data(let data): (body, response) = try await client.transport.upload(put, data: data)
@@ -142,7 +152,7 @@ extension NemiClient {
 
         /// `DELETE /files/{id}`. Moves to trash where the plan has one.
         public func delete(id: String) async throws {
-            try await client.perform("DELETE", "files/\(id)", query: [:], body: .none)
+            try await client.delete("files/\(id)")
         }
 
         static func mimeType(forFileName name: String) -> String? {
@@ -160,7 +170,8 @@ extension NemiClient {
     public struct Folders: Sendable {
         let client: NemiClient
 
-        /// `POST /folders`. Omit `parentId` for the top level.
+        /// `POST /folders`. Omit `parentId` for the top level. The answer
+        /// includes `workspaceId` and `parentId`.
         public func create(name: String, workspaceId: String, parentId: String? = nil) async throws -> NemiFolder {
             struct Create: Encodable {
                 let workspaceId: String

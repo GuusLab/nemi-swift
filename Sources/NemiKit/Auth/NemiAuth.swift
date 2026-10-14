@@ -227,13 +227,15 @@ public final class NemiAuth: NemiAccessTokenProvider, Sendable {
         _ = try? await send(request)
     }
 
-    /// The discovery document's `revocation_endpoint`, or the token endpoint's
-    /// sibling (`.../oauth/token` becomes `.../oauth/revoke`) when it is not advertised.
+    /// The discovery document's `revocation_endpoint`, or `<origin>/api/oauth/revoke`
+    /// (the documented location, next to the token endpoint) when it is not advertised.
     static func revocationEndpoint(for document: NemiDiscoveryDocument) -> URL? {
         if let endpoint = document.revocationEndpoint { return endpoint }
-        let token = document.tokenEndpoint
-        guard token.lastPathComponent == "token" else { return nil }
-        return token.deletingLastPathComponent().appendingPathComponent("revoke")
+        guard var components = URLComponents(url: document.tokenEndpoint, resolvingAgainstBaseURL: false) else { return nil }
+        components.path = "/api/oauth/revoke"
+        components.query = nil
+        components.fragment = nil
+        return components.url
     }
 
     // MARK: Token endpoint

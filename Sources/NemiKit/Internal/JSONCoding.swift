@@ -12,8 +12,9 @@ enum NemiJSON {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
-            if let seconds = try? container.decode(Double.self) {
-                return Date(timeIntervalSince1970: seconds)
+            if let number = try? container.decode(Double.self) {
+                // Epoch milliseconds when it is too large to be seconds.
+                return Date(timeIntervalSince1970: number > 100_000_000_000 ? number / 1000 : number)
             }
             let string = try container.decode(String.self)
             if let date = NemiDateFormat.parse(string) { return date }
@@ -27,7 +28,7 @@ enum NemiJSON {
 
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
             try container.encode(NemiDateFormat.string(from: date))

@@ -97,9 +97,9 @@ public actor NemiClient {
         case multipart(Data, boundary: String)
     }
 
-    func get<T: Decodable>(_ path: String, query: [String: String?] = [:], listKeys: [String] = []) async throws -> T {
+    func get<T: Decodable>(_ path: String, query: [String: String?] = [:]) async throws -> T {
         let data = try await perform("GET", path, query: query, body: .none)
-        return try decode(T.self, from: data, listKeys: listKeys)
+        return try decode(T.self, from: data)
     }
 
     func send<T: Decodable>(_ method: String, _ path: String, json: some Encodable) async throws -> T {
@@ -108,19 +108,12 @@ public actor NemiClient {
         return try decode(T.self, from: data)
     }
 
-    func sendDiscarding(_ method: String, _ path: String, json: (some Encodable)?) async throws {
-        let body: Body = try json.map { .json(try NemiJSON.makeEncoder().encode($0)) } ?? .none
-        _ = try await perform(method, path, query: [:], body: body)
+    func delete(_ path: String) async throws {
+        try await perform("DELETE", path, query: [:], body: .none)
     }
 
-    func list<T: Decodable>(_ path: String, query: [String: String?] = [:], keys: [String]) async throws -> [T] {
-        let list: FlexibleList<T> = try await get(path, query: query, listKeys: keys)
-        return list.items
-    }
-
-    func decode<T: Decodable>(_ type: T.Type, from data: Data, listKeys: [String] = []) throws -> T {
+    func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         let decoder = NemiJSON.makeDecoder()
-        decoder.userInfo[FlexibleList<NemiFile>.keysUserInfoKey] = listKeys
         do {
             return try decoder.decode(T.self, from: data)
         } catch {

@@ -154,7 +154,7 @@ a minute.
 let client = NemiClient(auth: auth)   // needs gallery.read / gallery.write
 let workspace = try await client.workspaces().first!
 
-// One page at a time
+// One page at a time (photo.color is a #rrggbb placeholder while thumbnails load)
 let page = try await client.gallery.photos(workspaceId: workspace.id, limit: 50)
 print(page.photos.count, "photos, next cursor:", page.nextCursor ?? "none")
 
@@ -164,14 +164,17 @@ for try await photo in client.gallery.allPhotos(workspaceId: workspace.id) {
     if photo.favorite { break }
 }
 
-// Full-size URL (valid 15 minutes: fetch again rather than storing it)
+// Full-size URL and the albums it is in (URL valid 15 minutes: fetch again rather than storing it)
 let full = try await client.gallery.photo(id: page.photos[0].id)
+print(full.albums?.map(\.name) ?? [])
 let (imageData, _) = try await URLSession.shared.data(from: full.url!)
 
 // Upload (JPEG, PNG, HEIC, WebP, AVIF up to 50 MB)
 let uploaded = try await client.gallery.upload(imageData: imageData, fileName: "copy.jpg", workspaceId: workspace.id)
 let album = try await client.gallery.createAlbum(name: "Favourites", workspaceId: workspace.id)
-try await client.gallery.addPhotos([uploaded.id], toAlbum: album.id)
+let result = try await client.gallery.addPhotos([uploaded.id], toAlbum: album.id)
+print("added", result.added, "skipped", result.skipped)
+try await client.gallery.setFavorite(true, photoId: uploaded.id)
 ```
 
 ## API overview
@@ -183,15 +186,25 @@ try await client.gallery.addPhotos([uploaded.id], toAlbum: album.id)
 | `files.upload(data:...)`, `files.upload(fileURL:...)`, `files.update`, `files.delete`, `folders.create` | `files.write` |
 | `gallery.photos`, `gallery.allPhotos`, `gallery.photo`, `gallery.albums` | `gallery.read` |
 | `gallery.upload`, `gallery.createAlbum`, `gallery.addPhotos`, `gallery.setFavorite` | `gallery.write` |
-| `docs.list/get` and `docs.create/update/delete` | `docs.read` / `docs.write` |
-| `sheets.list/get` and `sheets.create/updateCells/delete` | `sheets.read` / `sheets.write` |
-| `forms.list/get/responses` and `forms.create/delete` | `forms.read` / `forms.write` |
-| `canvas.list/get` | `canvas.read` |
-| `calendar.events` and `calendar.create/update/delete` | `calendar.read` / `calendar.write` |
+| `docs.list/get` and `docs.create/update(mode:)/delete` | `docs.read` / `docs.write` |
+| `sheets.list/get` and `sheets.create(cells:)/updateCells/delete` | `sheets.read` / `sheets.write` |
+| `forms.list/get/responses(limit:offset:)` and `forms.create/delete` | `forms.read` / `forms.write` |
+| `canvas.list`, `canvas.get(includeStrokes:)` | `canvas.read` |
+| `calendar.calendars` | `calendar.read` or `calendar.write` |
+| `calendar.events(calendarId:)` and `calendar.create/update/delete` | `calendar.read` / `calendar.write` |
+
+Without a `workspaceId`, lists span every workspace the person can read and
+creates go to the first workspace they can write in. A new event without a
+`calendarId` lands in the person's primary Nemi calendar.
 
 File uploads run in three steps: NemiKit creates the upload, PUTs the bytes to
-the presigned URL (without your access token), then completes it. Files can be
-at most 50 MB.
+the presigned URL with exactly the headers the server returned (and never your
+access token), then completes it. Files can be at most 50 MB; NemiKit also
+checks the upload's `max_size` before sending.
+
+Form responses come back as records keyed by the response sheet's column
+headers (`response["Your name"]`), newest first, with `total` for paging.
+Forms and canvas boards also keep everything the server sent in `raw`.
 
 ### Errors
 
@@ -221,13 +234,6 @@ rejected and the stored session was cleared.
   same moment, and saves the new refresh token before using it, because presenting a spent refresh token
   revokes the whole session.
 - Presigned upload and download URLs never receive the bearer token.
-
-## Provisional shapes
-
-The contract does not yet pin down the list envelopes for docs, sheets, forms,
-canvas and calendar, or the full shape of forms, form responses and canvas
-boards. NemiKit accepts either a bare array or an object holding the list, and
-keeps the fields it does not model in `raw`.
 
 ## Development
 

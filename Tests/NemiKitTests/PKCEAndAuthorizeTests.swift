@@ -127,11 +127,11 @@ struct AuthorizeTests {
         }
     }
 
-    @Test("revoke endpoint falls back to the token endpoint's sibling")
+    @Test("revoke endpoint falls back to <origin>/api/oauth/revoke")
     func revokeFallback() {
         let document = NemiDiscoveryDocument(
             issuer: issuer, authorizationEndpoint: URL(string: "\(issuer)/authorize")!,
-            tokenEndpoint: URL(string: "https://nemi.test/api/oauth/token")!, revocationEndpoint: nil,
+            tokenEndpoint: URL(string: "https://nemi.test/api/oauth/token?x=1")!, revocationEndpoint: nil,
             userinfoEndpoint: nil, jwksUri: URL(string: "\(issuer)/jwks")!
         )
         #expect(NemiAuth.revocationEndpoint(for: document)?.absoluteString == "https://nemi.test/api/oauth/revoke")

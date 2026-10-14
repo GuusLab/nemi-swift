@@ -22,20 +22,16 @@ First release.
 - Automatic, single-flight token refresh with rotated refresh tokens persisted
   before use. `invalid_grant` clears the session.
 - `signOut()` revokes the refresh token (RFC 7009) and clears the store.
-- `NemiClient` actor for REST API v1: account, workspaces, files (including
-  three-step uploads from memory or disk), folders, gallery (paging stream and
-  multipart upload), docs, sheets, forms, canvas and calendar.
+- `NemiClient` actor for REST API v1, typed against the v1 answers: account,
+  workspaces, files (three-step uploads from memory or disk that PUT with the
+  server's `headers` and check `max_size`), folders, gallery (paging stream,
+  multipart upload, albums with covers, `addPhotos` counts, `setFavorite`
+  returning the photo), docs (append mode), sheets (`rows`, `cols`, cells),
+  forms (summaries, detail, paged responses), canvas (with optional strokes)
+  and calendar (`calendars()`, events with `calendar_id`, `timezone`, `rrule`).
 - `NemiAPIError` with `status`, `code`, `message`, `requiredScope` and
   `retryAfter`. 401 refreshes once and retries; 429 retries up to twice,
   honoring `Retry-After`.
 - `NemiKitUI`: `SignInWithNemiButton` and `NemiSessionModel`.
-
-### Provisional
-
-The developer platform contract does not yet fix the list envelopes for docs,
-sheets, forms, canvas and calendar, or the full shape of forms, form responses
-and canvas boards. NemiKit accepts a bare array or an object holding the
-expected list, and exposes everything it does not model in a `raw` property.
-These types may gain typed fields in a later release.
 
 [0.1.0]: https://github.com/GuusLab/nemi-swift/releases/tag/0.1.0

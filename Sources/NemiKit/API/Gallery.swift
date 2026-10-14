@@ -68,12 +68,15 @@ extension NemiClient {
         }
 
         /// `POST /gallery/photos` (multipart). JPEG, PNG, HEIC, WebP or AVIF up to 50 MB.
-        /// Nemi re-encodes the image.
+        /// Nemi re-encodes the image. A photo already in the library throws `conflict` (409).
+        ///
+        /// - Parameter capturedAt: when the photo was taken, if the file has no EXIF date.
         public func upload(
             imageData: Data,
             fileName: String = "photo.jpg",
             mimeType: String? = nil,
-            workspaceId: String
+            workspaceId: String? = nil,
+            capturedAt: Date? = nil
         ) async throws -> NemiPhoto {
             guard Int64(imageData.count) <= Files.maxUploadSize else {
                 throw NemiAPIError(status: 413, code: .tooLarge, message: "Photos can be at most 50 MB.")
@@ -82,10 +85,18 @@ extension NemiClient {
             let boundary = "NemiKit-\(UUID().uuidString)"
             var body = Data()
             func line(_ string: String) { body.append(Data((string + "\r\n").utf8)) }
-            line("--\(boundary)")
-            line("Content-Disposition: form-data; name=\"workspace_id\"")
-            line("")
-            line(workspaceId)
+            if let workspaceId {
+                line("--\(boundary)")
+                line("Content-Disposition: form-data; name=\"workspace_id\"")
+                line("")
+                line(workspaceId)
+            }
+            if let capturedAt {
+                line("--\(boundary)")
+                line("Content-Disposition: form-data; name=\"captured_at\"")
+                line("")
+                line(NemiDateFormat.string(from: capturedAt))
+            }
             line("--\(boundary)")
             let safeName = fileName.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
             line("Content-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"")
@@ -98,29 +109,32 @@ extension NemiClient {
             return try await client.decode(NemiPhoto.self, from: data)
         }
 
-        /// `POST /gallery/albums`.
-        public func createAlbum(name: String, workspaceId: String) async throws -> NemiAlbum {
+        /// `POST /gallery/albums`. Without `workspaceId`, the person's own library.
+        public func createAlbum(name: String, workspaceId: String? = nil) async throws -> NemiAlbum {
             struct Create: Encodable {
-                let workspaceId: String
+                let workspaceId: String?
                 let name: String
                 enum CodingKeys: String, CodingKey { case workspaceId = "workspace_id", name }
             }
             return try await client.send("POST", "gallery/albums", json: Create(workspaceId: workspaceId, name: name))
         }
 
-        /// `POST /gallery/albums/{id}/photos`.
-        public func addPhotos(_ photoIds: [String], toAlbum albumId: String) async throws {
+        /// `POST /gallery/albums/{id}/photos` (up to 500 ids). Ids that are not
+        /// photos in the album's library are counted in `skipped`.
+        @discardableResult
+        public func addPhotos(_ photoIds: [String], toAlbum albumId: String) async throws -> NemiAlbumAddResult {
             struct Add: Encodable {
                 let photoIds: [String]
                 enum CodingKeys: String, CodingKey { case photoIds = "photo_ids" }
             }
-            try await client.sendDiscarding("POST", "gallery/albums/\(albumId)/photos", json: Add(photoIds: photoIds))
+            return try await client.send("POST", "gallery/albums/\(albumId)/photos", json: Add(photoIds: photoIds))
         }
 
-        /// `PATCH /gallery/photos/{id}`.
-        public func setFavorite(_ favorite: Bool, photoId: String) async throws {
+        /// `PATCH /gallery/photos/{id}`. Returns the updated photo (with `url` and `albums`).
+        @discardableResult
+        public func setFavorite(_ favorite: Bool, photoId: String) async throws -> NemiPhoto {
             struct Patch: Encodable { let favorite: Bool }
-            try await client.sendDiscarding("PATCH", "gallery/photos/\(photoId)", json: Patch(favorite: favorite))
+            return try await client.send("PATCH", "gallery/photos/\(photoId)", json: Patch(favorite: favorite))
         }
 
         static func sniffImageType(_ data: Data) -> String? {

@@ -299,13 +299,19 @@ struct NetworkTests {
                 #expect(payload["name"] as? String == "notes.txt")
                 #expect(payload["size"] as? Int == 5)
                 #expect(payload["type"] as? String == "text/plain")
-                return (200, jsonHeaders, json(["upload_id": "u1", "upload_url": "https://bucket.test/put?sig=abc", "method": "PUT", "expires_at": "2026-10-14T10:00:00Z"]))
+                return (201, jsonHeaders, json([
+                    "upload_id": "u1", "upload_url": "https://bucket.test/put?sig=abc", "method": "PUT",
+                    "headers": ["Content-Type": "text/plain; charset=utf-8", "x-amz-meta-owner": "w1"],
+                    "max_size": 52_428_800, "expires_at": "2026-10-14T10:00:00.000Z",
+                ]))
             case ("PUT", "bucket.test", "/put"):
                 #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
-                #expect(request.value(forHTTPHeaderField: "Content-Type") == "text/plain")
+                // The server's headers win over the guessed type.
+                #expect(request.value(forHTTPHeaderField: "Content-Type") == "text/plain; charset=utf-8")
+                #expect(request.value(forHTTPHeaderField: "x-amz-meta-owner") == "w1")
                 return (200, [:], Data())
             case ("POST", "nemi.test", "/api/v1/files/uploads/u1/complete"):
-                return (200, jsonHeaders, json(["id": "x1", "name": "notes.txt", "size": 5, "type": "text/plain", "workspace_id": "w1", "folder_id": "f1", "created_at": "2026-10-14T09:30:00Z"]))
+                return (201, jsonHeaders, json(["id": "x1", "name": "notes.txt", "size": 5, "type": "text/plain", "workspace_id": "w1", "folder_id": "f1", "created_at": "2026-10-14T09:30:00Z"]))
             default:
                 Issue.record("unexpected \(request.httpMethod ?? "") \(request.url?.absoluteString ?? "")")
                 return (500, [:], Data())
@@ -314,6 +320,18 @@ struct NetworkTests {
         let file = try await client.files.upload(data: Data("hello".utf8), name: "notes.txt", workspaceId: "w1", folderId: "f1")
         #expect(file.id == "x1")
         #expect(MockURLProtocol.requests.map { $0.request.httpMethod ?? "" } == ["POST", "PUT", "POST"])
+    }
+
+    @Test("a file over the ticket's max_size is refused before the PUT")
+    func uploadOverTicketLimit() async throws {
+        let client = makeClient(StaticAccessTokenProvider("t"))
+        MockURLProtocol.reset { _, _ in
+            (201, jsonHeaders, json(["upload_id": "u1", "upload_url": "https://bucket.test/put", "method": "PUT", "headers": [:], "max_size": 3, "expires_at": "2026-10-14T10:00:00.000Z"]))
+        }
+        await #expect(throws: NemiAPIError.self) {
+            try await client.files.upload(data: Data("hello".utf8), name: "a.txt", workspaceId: "w1")
+        }
+        #expect(MockURLProtocol.requests.count == 1)
     }
 
     @Test("files over 50 MB are refused before any request")
@@ -368,13 +386,27 @@ struct NetworkTests {
             let text = String(decoding: body, as: UTF8.self)
             #expect(text.contains("name=\"workspace_id\"\r\n\r\nw1\r\n"))
             #expect(text.contains("name=\"file\"; filename=\"beach.jpg\"\r\nContent-Type: image/jpeg"))
-            return (200, jsonHeaders, json(["id": "p9", "name": "beach.jpg", "width": 1, "height": 1, "size": 6, "captured_at": NSNull(), "favorite": false, "thumbnail_url": "https://cdn.test/p9"]))
+            #expect(text.contains("name=\"captured_at\"\r\n\r\n2026-08-01T12:00:00Z\r\n"))
+            return (201, jsonHeaders, json(["id": "p9", "workspace_id": "w1", "name": "beach.jpg", "width": 1, "height": 1, "size": 6, "captured_at": "2026-08-01T12:00:00.000Z", "favorite": false, "color": NSNull(), "thumbnail_url": "https://cdn.test/p9"]))
         }
-        let photo = try await client.gallery.upload(imageData: jpeg, fileName: "beach.jpg", workspaceId: "w1")
+        let photo = try await client.gallery.upload(imageData: jpeg, fileName: "beach.jpg", workspaceId: "w1", capturedAt: NemiDateFormat.parse("2026-08-01T12:00:00Z"))
         #expect(photo.id == "p9")
     }
 
-    @Test("docs, sheets and calendar hit the documented paths")
+    @Test("setFavorite returns the updated photo")
+    func favorite() async throws {
+        let client = makeClient(StaticAccessTokenProvider("t"))
+        MockURLProtocol.reset { request, body in
+            #expect(request.httpMethod == "PATCH")
+            #expect(String(data: body, encoding: .utf8) == #"{"favorite":true}"#)
+            return (200, jsonHeaders, json(["id": "p1", "workspace_id": "w1", "name": "a.jpg", "width": 1, "height": 1, "size": 1, "captured_at": "2026-08-01T12:00:00.000Z", "favorite": true, "color": NSNull(), "thumbnail_url": "https://cdn.test/t", "url": "https://cdn.test/full", "albums": []]))
+        }
+        let photo = try await client.gallery.setFavorite(true, photoId: "p1")
+        #expect(photo.favorite)
+        #expect(photo.albums == [])
+    }
+
+    @Test("docs, sheets, forms, canvas, gallery, folders and calendar hit the documented paths")
     func otherNamespaces() async throws {
         let client = makeClient(StaticAccessTokenProvider("t"))
         MockURLProtocol.reset { request, body in
@@ -382,13 +414,33 @@ struct NetworkTests {
             case ("GET", "/api/v1/docs"): return (200, jsonHeaders, json(["docs": [["id": "d1", "title": "A"]]]))
             case ("POST", "/api/v1/docs"):
                 #expect(String(data: body, encoding: .utf8) == ##"{"markdown":"# Hi","title":"New","workspace_id":"w1"}"##)
-                return (200, jsonHeaders, json(["id": "d2", "title": "New", "markdown": "# Hi"]))
+                return (201, jsonHeaders, json(["id": "d2", "title": "New", "markdown": "# Hi"]))
             case ("PATCH", "/api/v1/sheets/s1/cells"):
                 #expect(String(data: body, encoding: .utf8) == #"{"cells":{"A1":"x","B1":2}}"#)
-                return (200, jsonHeaders, json(["ok": true]))
+                return (200, jsonHeaders, json(["id": "s1", "updated": 2]))
+            case ("GET", "/api/v1/calendar/calendars"):
+                return (200, jsonHeaders, json(["calendars": [["id": "cal1", "name": "Personal", "color": "#3366ff", "timezone": "Europe/Amsterdam", "primary": true]]]))
             case ("GET", "/api/v1/calendar/events"):
                 #expect(request.url?.query?.contains("start=2026-10-01T00%3A00%3A00Z") == true)
+                #expect(request.url?.query?.contains("calendar_id=cal1") == true)
                 return (200, jsonHeaders, json(["events": []]))
+            case ("POST", "/api/v1/calendar/events"):
+                // No calendar_id: the server picks the primary calendar.
+                #expect(String(data: body, encoding: .utf8) == #"{"end":"2026-10-01T01:00:00Z","start":"2026-10-01T00:00:00Z","title":"Focus"}"#)
+                return (201, jsonHeaders, json(["id": "e1", "calendar_id": "cal1", "title": "Focus", "start": "2026-10-01T00:00:00.000Z", "end": "2026-10-01T01:00:00.000Z", "all_day": false, "location": NSNull(), "description": NSNull(), "timezone": NSNull(), "rrule": NSNull()]))
+            case ("GET", "/api/v1/forms/f1/responses"):
+                #expect(request.url?.query == "limit=10&offset=20")
+                return (200, jsonHeaders, json(["form_id": "f1", "total": 21, "responses": [["Name": "Ada"]]]))
+            case ("GET", "/api/v1/canvas/c1"):
+                #expect(request.url?.query == "strokes=true")
+                return (200, jsonHeaders, json(["canvas_id": "c1", "title": "Plan", "element_count": 0, "elements": []]))
+            case ("POST", "/api/v1/gallery/albums/a1/photos"):
+                #expect(String(data: body, encoding: .utf8) == #"{"photo_ids":["p1","p2"]}"#)
+                return (200, jsonHeaders, json(["album_id": "a1", "added": 1, "skipped": 1]))
+            case ("POST", "/api/v1/folders"):
+                #expect(String(data: body, encoding: .utf8) == #"{"name":"2026","parent_id":"f1","workspace_id":"w1"}"#)
+                return (201, jsonHeaders, json(["id": "f2", "name": "2026", "workspace_id": "w1", "parent_id": "f1"]))
+            case ("DELETE", "/api/v1/docs/d1"), ("DELETE", "/api/v1/calendar/events/e1"): return (204, [:], Data())
             case ("DELETE", "/api/v1/forms/f1"): return (204, [:], Data())
             default:
                 Issue.record("unexpected \(request.httpMethod ?? "") \(request.url?.path ?? "")")
@@ -396,10 +448,20 @@ struct NetworkTests {
             }
         }
         #expect(try await client.docs.list().map(\.id) == ["d1"])
+        #expect(try await client.sheets.updateCells(id: "s1", cells: ["A1": "x", "B1": 2]).updated == 2)
         #expect(try await client.docs.create(title: "New", markdown: "# Hi", workspaceId: "w1").id == "d2")
-        try await client.sheets.updateCells(id: "s1", cells: ["A1": "x", "B1": 2])
         let start = NemiDateFormat.parse("2026-10-01T00:00:00Z")!
-        #expect(try await client.calendar.events(start: start, end: start.addingTimeInterval(86_400)).isEmpty)
+        #expect(try await client.calendar.calendars().first?.primary == true)
+        #expect(try await client.calendar.events(start: start, end: start.addingTimeInterval(86_400), calendarId: "cal1").isEmpty)
+        #expect(try await client.calendar.create(title: "Focus", start: start, end: start.addingTimeInterval(3600)).calendarId == "cal1")
+        try await client.calendar.delete(id: "e1")
+        let responses = try await client.forms.responses(formId: "f1", limit: 10, offset: 20)
+        #expect(responses.total == 21)
+        #expect(responses.responses.first?["Name"] == "Ada")
+        #expect(try await client.canvas.get(id: "c1", includeStrokes: true).id == "c1")
+        #expect(try await client.gallery.addPhotos(["p1", "p2"], toAlbum: "a1").skipped == 1)
+        #expect(try await client.folders.create(name: "2026", workspaceId: "w1", parentId: "f1").parentId == "f1")
+        try await client.docs.delete(id: "d1")
         try await client.forms.delete(id: "f1")
     }
 }

@@ -1,5 +1,15 @@
 import Foundation
 
+/// The `prompt` values the Nemi authorize endpoint supports.
+public enum NemiPrompt: String, Sendable, Equatable {
+    /// Always show the consent screen, even when every scope was granted before.
+    case consent
+    /// Never show any screen. Fails with `login_required` (not signed in to Nemi)
+    /// or `consent_required` (scopes not granted yet), surfaced as
+    /// `NemiAuthError.authorizationFailed`. Useful for a silent re-check.
+    case none
+}
+
 /// An OAuth scope. Use the static constants, or `NemiScope("custom")` for a
 /// scope this SDK version does not know about yet.
 public struct NemiScope: RawRepresentable, Hashable, Sendable, Codable, ExpressibleByStringLiteral, CustomStringConvertible {

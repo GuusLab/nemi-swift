@@ -33,7 +33,7 @@ struct AuthorizeTests {
     let issuer = "https://nemi.test/oauth"
     let redirect = URL(string: "com.example.app:/callback")!
 
-    func makeRequest(scopes: [NemiScope] = [.profile, .filesRead, .offlineAccess], prompt: String? = nil) throws -> NemiAuthorizationRequest {
+    func makeRequest(scopes: [NemiScope] = [.profile, .filesRead, .offlineAccess], prompt: NemiPrompt? = nil) throws -> NemiAuthorizationRequest {
         try NemiAuthorizationRequest.make(
             authorizationEndpoint: URL(string: "\(issuer)/authorize")!,
             clientId: "nemi_app_abc",
@@ -48,7 +48,7 @@ struct AuthorizeTests {
 
     @Test("builds every required parameter")
     func parameters() throws {
-        let request = try makeRequest(prompt: "consent")
+        let request = try makeRequest(prompt: .consent)
         let components = URLComponents(url: request.url, resolvingAgainstBaseURL: false)!
         #expect(components.host == "nemi.test")
         #expect(components.path == "/oauth/authorize")
@@ -65,6 +65,12 @@ struct AuthorizeTests {
         // `+` must be escaped, or the server reads it as a space.
         #expect(request.url.absoluteString.contains("state=state%2B%2F%3D1"))
         #expect(request.url.absoluteString.contains("scope=openid%20profile"))
+    }
+
+    @Test("prompt=none is sent as is, and omitted when nil")
+    func promptValues() throws {
+        #expect(try makeRequest(prompt: NemiPrompt.none).url.absoluteString.hasSuffix("&prompt=none"))
+        #expect(!(try makeRequest().url.absoluteString.contains("prompt=")))
     }
 
     @Test("openid is added once and order is kept")

@@ -190,6 +190,7 @@ try await client.gallery.setFavorite(true, photoId: uploaded.id)
 | `sheets.list/get` and `sheets.create(cells:)/updateCells/delete` | `sheets.read` / `sheets.write` |
 | `forms.list/get/responses(limit:offset:)` and `forms.create/delete` | `forms.read` / `forms.write` |
 | `canvas.list`, `canvas.get(includeStrokes:)` | `canvas.read` |
+| `canvas.create`, `canvas.update(title:elements:)`, `canvas.delete` | `canvas.write` |
 | `calendar.calendars` | `calendar.read` or `calendar.write` |
 | `calendar.events(calendarId:)` and `calendar.create/update/delete` | `calendar.read` / `calendar.write` |
 
@@ -201,6 +202,19 @@ File uploads run in three steps: NemiKit creates the upload, PUTs the bytes to
 the presigned URL with exactly the headers the server returned (and never your
 access token), then completes it. Files can be at most 50 MB; NemiKit also
 checks the upload's `max_size` before sending.
+
+Sheet cells read back as `NemiSheetCell` (`value` is what is stored, a
+`JSONValue` such as a number or a `=SUM(...)` formula; `display` is the text the
+grid shows) and are written as plain `JSONValue`s:
+
+```swift
+let sheet = try await client.sheets.get(id: id)
+print(sheet.cells?["B4"]?.text ?? "")            // "1,900.00"
+try await client.sheets.updateCells(id: id, cells: ["A5": "Total", "B5": "=SUM(B1:B4)"])
+```
+
+`canvas.update(id:elements:)` replaces the whole board: get it, change the
+list, send it all back.
 
 Form responses come back as records keyed by the response sheet's column
 headers (`response["Your name"]`), newest first, with `total` for paging.
@@ -217,6 +231,11 @@ do {
     // error.requiredScope == .filesRead: sign in again asking for it.
 }
 ```
+
+`signIn` and `makeAuthorizationRequest` take `prompt: .consent` (always show the
+consent screen) or `prompt: .none` (show nothing; fails with
+`NemiAuthError.authorizationFailed` and `login_required` or `consent_required`
+when the person would have to act). Those are the only values Nemi supports.
 
 A 401 triggers one refresh and one retry. A 429 is retried up to twice, waiting
 for `Retry-After`. Sign-in and refresh throw `NemiAuthError`; `.cancelled` means

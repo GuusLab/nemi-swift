@@ -132,10 +132,10 @@ public final class NemiAuth: NemiAccessTokenProvider, Sendable {
 
     /// Creates the authorize URL and the secrets (PKCE verifier, state, nonce) for one sign-in.
     ///
-    /// - Parameter prompt: pass `"consent"` to always show the consent screen.
+    /// - Parameter prompt: `.consent` always shows the consent screen; `.none` never shows a screen.
     public func makeAuthorizationRequest(
         scopes: [NemiScope] = NemiScope.defaultSignIn,
-        prompt: String? = nil
+        prompt: NemiPrompt? = nil
     ) async throws -> NemiAuthorizationRequest {
         let document = try await discovery()
         return try NemiAuthorizationRequest.make(

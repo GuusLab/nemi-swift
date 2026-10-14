@@ -24,7 +24,7 @@ public struct NemiAuthorizationRequest: Sendable, Equatable {
         pkce: PKCE,
         state: String,
         nonce: String,
-        prompt: String? = nil
+        prompt: NemiPrompt? = nil
     ) throws -> NemiAuthorizationRequest {
         var finalScopes: [NemiScope] = []
         for scope in [NemiScope.openid] + scopes where !finalScopes.contains(scope) {
@@ -45,7 +45,7 @@ public struct NemiAuthorizationRequest: Sendable, Equatable {
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
         ]
-        if let prompt { items.append(URLQueryItem(name: "prompt", value: prompt)) }
+        if let prompt { items.append(URLQueryItem(name: "prompt", value: prompt.rawValue)) }
         // Escape everything outside the unreserved set so `+`, `:` and `/` survive intact.
         components.percentEncodedQuery = items
             .map { "\(FormEncoding.escape($0.name))=\(FormEncoding.escape($0.value ?? ""))" }

@@ -108,16 +108,16 @@ extension NemiClient {
             ])
         }
 
-        /// `POST /forms`. `items` are the questions, as in the Nemi docs, passed through as JSON.
-        public func create(title: String, description: String? = nil, items: [JSONValue]? = nil, workspaceId: String? = nil) async throws -> NemiForm {
+        /// `POST /forms`. `fields` are the questions, as in the Nemi docs, passed through as JSON.
+        public func create(title: String, description: String? = nil, fields: [JSONValue]? = nil, workspaceId: String? = nil) async throws -> NemiForm {
             struct Create: Encodable {
                 let workspaceId: String?
                 let title: String
                 let description: String?
-                let items: [JSONValue]?
-                enum CodingKeys: String, CodingKey { case workspaceId = "workspace_id", title, description, items }
+                let fields: [JSONValue]?
+                enum CodingKeys: String, CodingKey { case workspaceId = "workspace_id", title, description, fields }
             }
-            return try await client.send("POST", "forms", json: Create(workspaceId: workspaceId, title: title, description: description, items: items))
+            return try await client.send("POST", "forms", json: Create(workspaceId: workspaceId, title: title, description: description, fields: fields))
         }
 
         /// `DELETE /forms/{id}`.
@@ -126,7 +126,7 @@ extension NemiClient {
         }
     }
 
-    /// Canvas boards (read only). Needs `canvas.read`.
+    /// Canvas boards. Needs `canvas.read` / `canvas.write`.
     public struct Canvas: Sendable {
         let client: NemiClient
 
@@ -139,6 +139,31 @@ extension NemiClient {
         /// `GET /canvas/{id}`: the board's shapes and text; pen strokes only with `includeStrokes`.
         public func get(id: String, includeStrokes: Bool = false) async throws -> NemiCanvas {
             try await client.get("canvas/\(id)", query: ["strokes": includeStrokes ? "true" : nil])
+        }
+
+        /// `POST /canvas`: an empty board. Returns the summary.
+        public func create(workspaceId: String? = nil, title: String? = nil) async throws -> NemiCanvas {
+            struct Create: Encodable {
+                let workspaceId: String?
+                let title: String?
+                enum CodingKeys: String, CodingKey { case workspaceId = "workspace_id", title }
+            }
+            return try await client.send("POST", "canvas", json: Create(workspaceId: workspaceId, title: title))
+        }
+
+        /// `PATCH /canvas/{id}`. `elements` REPLACES the whole board: get it,
+        /// change the list, send it all back. Returns the board.
+        public func update(id: String, title: String? = nil, elements: [JSONValue]? = nil) async throws -> NemiCanvas {
+            guard title != nil || elements != nil else {
+                throw NemiAPIError(status: 400, code: .invalidRequest, message: "Send title, elements or both.")
+            }
+            struct Patch: Encodable { let title: String?; let elements: [JSONValue]? }
+            return try await client.send("PATCH", "canvas/\(id)", json: Patch(title: title, elements: elements))
+        }
+
+        /// `DELETE /canvas/{id}`. Final.
+        public func delete(id: String) async throws {
+            try await client.delete("canvas/\(id)")
         }
     }
 

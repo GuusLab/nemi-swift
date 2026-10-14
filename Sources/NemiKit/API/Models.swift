@@ -224,7 +224,46 @@ public struct NemiSheet: Codable, Sendable, Equatable, Identifiable {
     public let updatedAt: Date?
     public let rows: Int?
     public let cols: Int?
-    public let cells: [String: JSONValue]?
+    public let cells: [String: NemiSheetCell]?
+}
+
+/// One cell as read: the stored `value` and the text the grid shows.
+///
+/// Write cells with plain `JSONValue`s through `sheets.updateCells`.
+public struct NemiSheetCell: Codable, Sendable, Equatable {
+    /// What is stored: text, a number, a boolean, or a formula string such as `=SUM(A1:A3)`.
+    public let value: JSONValue
+    /// The formatted text shown in the grid (the result, for a formula).
+    public let display: String?
+
+    public init(value: JSONValue, display: String? = nil) {
+        self.value = value
+        self.display = display
+    }
+
+    enum CodingKeys: String, CodingKey { case value, display }
+
+    public init(from decoder: Decoder) throws {
+        if let c = try? decoder.container(keyedBy: CodingKeys.self), c.contains(.value) || c.contains(.display) {
+            value = try c.decodeIfPresent(JSONValue.self, forKey: .value) ?? .null
+            display = try c.decodeIfPresent(String.self, forKey: .display)
+        } else {
+            // Tolerate a bare value.
+            value = try decoder.singleValueContainer().decode(JSONValue.self)
+            display = nil
+        }
+    }
+
+    /// `display` when present, else the value as text.
+    public var text: String {
+        if let display { return display }
+        switch value {
+        case .string(let string): return string
+        case .number(let number): return number.rounded() == number && abs(number) < 1e15 ? String(Int64(number)) : String(number)
+        case .bool(let bool): return bool ? "TRUE" : "FALSE"
+        default: return ""
+        }
+    }
 }
 
 struct SheetList: Decodable { let sheets: [NemiSheet] }
@@ -303,7 +342,8 @@ public struct NemiFormResponsePage: Decodable, Sendable, Equatable {
 
 // MARK: Canvas
 
-/// A Canvas board. Lists carry the summary; `canvas.get` adds the elements.
+/// A Canvas board. Lists and `canvas.create` carry the summary; `canvas.get`
+/// and `canvas.update` add the elements.
 /// Everything sent is also in `raw`.
 public struct NemiCanvas: Decodable, Sendable, Equatable, Identifiable {
     public let id: String

@@ -113,13 +113,24 @@ struct DecodingTests {
     @Test func sheets() throws {
         let list = try decode(SheetList.self, #"{"sheets":[{"id":"s1","title":"Budget","workspace_id":"w1","updated_at":"2026-10-14T09:30:00.000Z"}]}"#)
         #expect(list.sheets.first?.cells == nil)
-        let sheet = try decode(NemiSheet.self, #"{"id":"s1","title":"Budget","workspace_id":"w1","updated_at":null,"rows":100,"cols":26,"cells":{"A1":"Rent","B1":950.5,"C1":true,"D1":null}}"#)
+        let sheet = try decode(NemiSheet.self, """
+        {"id":"s1","title":"Budget","workspace_id":"w1","updated_at":null,"rows":100,"cols":26,
+         "cells":{"A1":{"value":"Rent","display":"Rent"},"B1":{"value":950.5,"display":"€950.50"},"C1":{"value":true,"display":"TRUE"},
+                  "D1":{"value":"=SUM(B1:B2)","display":"1900"},"E1":{"value":7}}}
+        """)
         #expect(sheet.rows == 100)
         #expect(sheet.cols == 26)
-        #expect(sheet.cells?["A1"] == "Rent")
-        #expect(sheet.cells?["B1"] == .number(950.5))
-        #expect(sheet.cells?["C1"] == .bool(true))
-        #expect(sheet.cells?["D1"] == .null)
+        #expect(sheet.cells?["A1"] == NemiSheetCell(value: "Rent", display: "Rent"))
+        #expect(sheet.cells?["B1"]?.value == .number(950.5))
+        #expect(sheet.cells?["B1"]?.text == "€950.50")
+        #expect(sheet.cells?["C1"]?.value == .bool(true))
+        #expect(sheet.cells?["D1"]?.value == "=SUM(B1:B2)")
+        #expect(sheet.cells?["D1"]?.text == "1900")
+        #expect(sheet.cells?["E1"]?.display == nil)
+        #expect(sheet.cells?["E1"]?.text == "7")
+        // A bare value is tolerated.
+        let bare = try decode(NemiSheet.self, #"{"id":"s2","title":"T","cells":{"A1":"x"}}"#)
+        #expect(bare.cells?["A1"] == NemiSheetCell(value: "x"))
         let update = try decode(NemiSheetCellsUpdate.self, #"{"id":"s1","updated":2}"#)
         #expect(update.updated == 2)
     }

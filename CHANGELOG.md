@@ -12,6 +12,7 @@ First release.
 
 - `NemiAuth`: Sign in with Nemi through `ASWebAuthenticationSession` (iOS, macOS,
   visionOS) with PKCE S256, `state`, `nonce` and RFC 9207 `iss` checks.
+  `NemiPrompt` (`.consent`, `.none`), the prompt values Nemi supports.
   `makeAuthorizationRequest` and `completeAuthorization` for custom flows and
   platforms without a web authentication session (tvOS, watchOS).
 - OpenID Connect discovery with a one-day cache, issuer check, and JWKS with
@@ -26,9 +27,10 @@ First release.
   workspaces, files (three-step uploads from memory or disk that PUT with the
   server's `headers` and check `max_size`), folders, gallery (paging stream,
   multipart upload, albums with covers, `addPhotos` counts, `setFavorite`
-  returning the photo), docs (append mode), sheets (`rows`, `cols`, cells),
-  forms (summaries, detail, paged responses), canvas (with optional strokes)
-  and calendar (`calendars()`, events with `calendar_id`, `timezone`, `rrule`).
+  returning the photo), docs (append mode), sheets (`rows`, `cols`, and
+  `NemiSheetCell` with `value` and `display`), forms (summaries, detail,
+  create with `fields`, paged responses), canvas (read with optional strokes,
+  create, update that replaces the elements, delete) and calendar (`calendars()`, events with `calendar_id`, `timezone`, `rrule`).
 - `NemiAPIError` with `status`, `code`, `message`, `requiredScope` and
   `retryAfter`. 401 refreshes once and retries; 429 retries up to twice,
   honoring `Retry-After`.

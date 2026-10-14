@@ -17,7 +17,8 @@ extension NemiAuth {
     ///   - prefersEphemeralSession: `true` does not share cookies with Safari, so
     ///     the person signs in to Nemi every time and no "wants to use nemilab.com
     ///     to sign in" alert is shown.
-    ///   - prompt: `"consent"` always shows the consent screen.
+    ///   - prompt: `.consent` always shows the consent screen. `.none` shows no
+    ///     screen at all and fails when the person would have to act.
     /// - Throws: `NemiAuthError.cancelled` when the person closes the sheet.
     @MainActor
     @discardableResult
@@ -25,7 +26,7 @@ extension NemiAuth {
         scopes: [NemiScope] = NemiScope.defaultSignIn,
         presentationAnchor: ASPresentationAnchor? = nil,
         prefersEphemeralSession: Bool = false,
-        prompt: String? = nil
+        prompt: NemiPrompt? = nil
     ) async throws -> NemiSession {
         let request = try await makeAuthorizationRequest(scopes: scopes, prompt: prompt)
         let authenticator = WebAuthenticator(anchor: presentationAnchor)

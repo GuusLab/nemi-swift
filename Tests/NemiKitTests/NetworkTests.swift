@@ -431,6 +431,16 @@ struct NetworkTests {
             case ("GET", "/api/v1/forms/f1/responses"):
                 #expect(request.url?.query == "limit=10&offset=20")
                 return (200, jsonHeaders, json(["form_id": "f1", "total": 21, "responses": [["Name": "Ada"]]]))
+            case ("POST", "/api/v1/forms"):
+                #expect(String(data: body, encoding: .utf8) == #"{"fields":[{"label":"Name","type":"short_text"}],"title":"RSVP"}"#)
+                return (201, jsonHeaders, json(["form_id": "f9", "title": "RSVP", "fields": [["id": "q1", "label": "Name", "type": "short_text"]]]))
+            case ("POST", "/api/v1/canvas"):
+                #expect(String(data: body, encoding: .utf8) == #"{"title":"Plan","workspace_id":"w1"}"#)
+                return (201, jsonHeaders, json(["id": "c2", "title": "Plan", "workspace_id": "w1", "updated_at": "2026-10-14T09:30:00.000Z"]))
+            case ("PATCH", "/api/v1/canvas/c2"):
+                #expect(String(data: body, encoding: .utf8) == #"{"elements":[{"text":"Hi","type":"text"}]}"#)
+                return (200, jsonHeaders, json(["canvas_id": "c2", "title": "Plan", "element_count": 1, "elements": [["id": "e1", "type": "text", "text": "Hi"]]]))
+            case ("DELETE", "/api/v1/canvas/c2"): return (204, [:], Data())
             case ("GET", "/api/v1/canvas/c1"):
                 #expect(request.url?.query == "strokes=true")
                 return (200, jsonHeaders, json(["canvas_id": "c1", "title": "Plan", "element_count": 0, "elements": []]))
@@ -459,6 +469,16 @@ struct NetworkTests {
         #expect(responses.total == 21)
         #expect(responses.responses.first?["Name"] == "Ada")
         #expect(try await client.canvas.get(id: "c1", includeStrokes: true).id == "c1")
+        let form = try await client.forms.create(title: "RSVP", fields: [["type": "short_text", "label": "Name"]])
+        #expect(form.id == "f9")
+        #expect(form.fields?.count == 1)
+        let board = try await client.canvas.create(workspaceId: "w1", title: "Plan")
+        #expect(board.id == "c2")
+        #expect(board.workspaceId == "w1")
+        let updated = try await client.canvas.update(id: "c2", elements: [["type": "text", "text": "Hi"]])
+        #expect(updated.elementCount == 1)
+        #expect(updated.elements?.first?["text"] == "Hi")
+        try await client.canvas.delete(id: "c2")
         #expect(try await client.gallery.addPhotos(["p1", "p2"], toAlbum: "a1").skipped == 1)
         #expect(try await client.folders.create(name: "2026", workspaceId: "w1", parentId: "f1").parentId == "f1")
         try await client.docs.delete(id: "d1")
